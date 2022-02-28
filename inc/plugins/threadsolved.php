@@ -18,17 +18,17 @@ if (defined('IN_ADMINCP'))
 }
 else
 {
-    $plugins->add_hook('forumdisplay_thread', 'threadsolved');
-    $plugins->add_hook('search_results_thread', 'threadsolved');
-    //$plugins->add_hook('search_results_post', 'threadsolved');
-    $plugins->add_hook('showthread_linear', 'threadsolved');
-    $plugins->add_hook('showthread_threaded', 'threadsolved');
+    // $plugins->add_hook('forumdisplay_thread', 'threadsolved');
+    // $plugins->add_hook('search_results_thread', 'threadsolved');
+    // //$plugins->add_hook('search_results_post', 'threadsolved');
+    // $plugins->add_hook('showthread_linear', 'threadsolved');
+    $plugins->add_hook('showthread_end', 'threadsolved_showthread');
 }
 
 function threadsolved_info()
 {
     global $db, $lang;
-    $lang->load('config_threadsolved');
+    $lang->load('threadsolved', true);
 
     return array(
         'name'          => $db->escape_string($lang->threadsolved),
@@ -45,7 +45,7 @@ function threadsolved_info()
 function threadsolved_install()
 {
     global $db, $mybb, $lang;
-    $lang->load('config_threadsolved');
+    $lang->load('threadsolved', true);
 
     /** Add db column if not exists */
     if (!$db->field_exists('threadsolved', 'threads'))
@@ -55,8 +55,8 @@ function threadsolved_install()
 
     /** Add templates */
     $templatearray = array(
-        'showthread_thread_solved_button' => '<a href="showthread.php?action=marksolved&amp;tid={$tid}&amp;my_post_key={$mybb->post_code}" class="button new_reply_button"><span>{$lang->setting_threadsolved_solved_text_value}</span></a>&nbsp;',
-        'showthread_thread_solved_button' => '<a href="showthread.php?action=markunsolved&amp;tid={$tid}&amp;my_post_key={$mybb->post_code}" class="button new_reply_button"><span>{$lang->setting_threadsolved_notsolved_text_value}</span></a>&nbsp;',
+        'showthread_thread_solved_button' => '<a href="showthread.php?marksolved=1&amp;my_post_key={$mybb->post_code}" class="button thread_solved_button"><span>{$lang->setting_threadsolved_solved_text_value}</span></a>&nbsp;',
+        'showthread_thread_notsolved_button' => '<a href="showthread.php?marksolved=0&amp;my_post_key={$mybb->post_code}" class="button thread_notsolved_button"><span>{$lang->setting_threadsolved_notsolved_text_value}</span></a>&nbsp;',
         'threadsolved_icon' => '<img src="images/solved.png" border="0" alt="{$lang->setting_threadsolved_solved_text_value}" style="vertical-align: middle;" />'
     );
 
@@ -151,18 +151,23 @@ function threadsolved_uninstall()
     if ($mybb->request_method != 'post')
     {
         global $page, $lang;
-        $lang->load('config_threadsolved');
+        $lang->load('threadsolved', true);
 
         $page->output_confirm_action('index.php?module=config-plugins&action=deactivate&uninstall=1&plugin=threadsolved', $lang->threadsolved_uninstall_message, $lang->threadsolved_uninstall);
     }
 
+    /** Remove settings */
     $db->delete_query("settinggroups", "name='threadsolved'");
     $db->delete_query("settings", "name LIKE 'threadsolved_%'");
 
     rebuild_settings();
 
+    /** Remove templates */
+    $db->delete_query('templates', "title IN ('showthread_thread_solved_button', 'showthread_thread_notsolved_button', 'threadsolved_icon')");
+
     if (!isset($mybb->input['no']))
     {
+        /** Remove db column*/
         $db->drop_column("threads", "threadsolved");
     }
 }
@@ -190,25 +195,32 @@ function threadsolved_deactivate()
 function threadsolved_settings()
 {
     global $lang;
-    $lang->load('config_threadsolved');
+    $lang->load('threadsolved', true);
 }
 
-function threadsolved()
+function threadsolved_showthread()
 {
+    global $mybb, $lang, $thread, $templates, $threadsolved, $threadsolved_button;
+    $lang->load('threadsolved');
 
-    global $threadsolved, $thread, $post, $templates, $mybb, $threadsolved_button, $db, $theme;
-
-    if ($mybb->user['uid'] != 0 && (in_array($thread['fid'], explode(',', $mybb->settings['ts_forum_select'])) || $mybb->settings['ts_forum_select'] == "-1") && ($mybb->user['uid'] == $thread['uid'] && $mybb->settings['ts_threadowner'] == 1 || in_array($mybb->user['usergroup'], explode(',', $mybb->settings['ts_group_select']))))
+    if ((!is_member($mybb->settings['threadsolved_groups']) && ($mybb->user['uid'] == $thread['uid'] && $mybb->settings['threadsolved_threadowner'] != 1)) || ($mybb->settings['threadsolved_forums'] != "-1" && !in_array($thread['fid'], explode(',', $mybb->settings['threadsolved_forums']))))
     {
-        if ($mybb->input['marksolved'] == "1")
+        return;
+    }
+
+    if ($marksolved = $mybb->get_input('marksolved', MyBB::INPUT_INT))
+    {
+        verify_post_check($mybb->get_input('my_post_key'));
+
+        if ($marksolved == 1)
         {
-            $db->query("UPDATE " . TABLE_PREFIX . "threads SET threadsolved = '1' WHERE tid = '" . $thread['tid'] . "';");
-            $thread['threadsolved'] = "1";
+            $db->update_query("threads", "array('threadsolved' => 1)", "tid = '{$thread['tid']}'");
+            $thread['threadsolved'] = 1;
         }
-        if ($mybb->input['marksolved'] == "0")
+        elseif ($marksolved == 0)
         {
-            $db->query("UPDATE " . TABLE_PREFIX . "threads SET threadsolved = '0' WHERE tid = '" . $thread['tid'] . "';");
-            $thread['threadsolved'] = "0";
+            $db->update_query("threads", "array('threadsolved' => 0)", "tid = '{$thread['tid']}'");
+            $thread['threadsolved'] = 0;
         }
     }
 
@@ -216,24 +228,20 @@ function threadsolved()
 
     if ($thread['threadsolved'] == "1")
     {
-        $threadsolved = "<img src=\"images/solved.png\" border=\"0\" alt=\"\" style=\"vertical-align: middle;\" />";
+        eval("\$threadsolved = \"" . $templates->get("threadsolved_icon") . "\";");
+
+        if(!empty($mybb->settings['threadsolved_solved_text']))
+        {
+            $lang->setting_threadsolved_notsolved_text_value = htmlspecialchars_uni($mybb->settings['threadsolved_notsolved_text']);
+        }
+        eval("\$threadsolved_button = \"" . $templates->get("showthread_thread_notsolved_button") . "\";");
     }
-
-    if (basename($_SERVER['PHP_SELF']) == "showthread.php")
+    else
     {
-        if ($thread['threadsolved'] != "1" && (in_array($thread['fid'], explode(',', $mybb->settings['ts_forum_select'])) || $mybb->settings['ts_forum_select'] == "-1") && ($mybb->user['uid'] != 0 && ($mybb->user['uid'] == $thread['uid'] && $mybb->settings['ts_threadowner'] == 1 || in_array($mybb->user['usergroup'], explode(',', $mybb->settings['ts_group_select'])))))
+        if(!empty($mybb->settings['threadsolved_solved_text']))
         {
-
-            $solved = $mybb->settings['ts_solved_text'];
-            $threadsolved_button = "<a href=\"showthread.php?tid=" . $thread['tid'] . "&amp;marksolved=1\" class=\"button thread_solved\"><i style=\"font-size: 14px;\" class=\"fa fa-check fa-fw\"></i>
-	<span>$solved</span></a>";
+            $lang->setting_threadsolved_solved_text_value = htmlspecialchars_uni($mybb->settings['threadsolved_solved_text']);
         }
-        if ($thread['threadsolved'] == "1" && (in_array($thread['fid'], explode(',', $mybb->settings['ts_forum_select'])) || $mybb->settings['ts_forum_select'] == "-1") && ($mybb->user['uid'] != 0 && ($mybb->user['uid'] == $thread['uid'] && $mybb->settings['ts_threadowner'] == 1 || in_array($mybb->user['usergroup'], explode(',', $mybb->settings['ts_group_select'])))))
-        {
-
-            $notsolved = $mybb->settings['ts_notsolved_text'];
-            $threadsolved_button = "<a href=\"showthread.php?tid=" . $thread['tid'] . "&amp;marksolved=0\" class=\"button thread_notsolved\"><i style=\"font-size: 14px;\" class=\"fa fa-ban fa-fw\"></i>
-	<span>$notsolved</span></a>";
-        }
+        eval("\$threadsolved_button = \"" . $templates->get("showthread_thread_solved_button") . "\";");
     }
 }
