@@ -44,14 +44,33 @@ function threadsolved_info()
 
 function threadsolved_install()
 {
-    global $db, $lang;
+    global $db, $mybb, $lang;
     $lang->load('config_threadsolved');
 
     /** Add db column if not exists */
-
     if (!$db->field_exists('threadsolved', 'threads'))
     {
         $db->add_column("threads", "threadsolved", "tinyint(1) NOT NULL default '0'");
+    }
+
+    /** Add templates */
+    $templatearray = array(
+        'showthread_thread_solved_button' => '<a href="showthread.php?action=marksolved&amp;tid={$tid}&amp;my_post_key={$mybb->post_code}" class="button new_reply_button"><span>{$lang->setting_threadsolved_solved_text_value}</span></a>&nbsp;',
+        'showthread_thread_solved_button' => '<a href="showthread.php?action=markunsolved&amp;tid={$tid}&amp;my_post_key={$mybb->post_code}" class="button new_reply_button"><span>{$lang->setting_threadsolved_notsolved_text_value}</span></a>&nbsp;',
+        'threadsolved_icon' => '<img src="images/solved.png" border="0" alt="{$lang->setting_threadsolved_solved_text_value}" style="vertical-align: middle;" />'
+    );
+
+    foreach ($templatearray as $name => $template)
+    {
+        $template = array(
+            'title' => $db->escape_string($name),
+            'template' => $db->escape_string($template),
+            'version' => $mybb->version_code,
+            'sid' => -2,
+            'dateline' => TIME_NOW
+        );
+
+        $db->insert_query('templates', $template);
     }
 
     /** Add Settings */
