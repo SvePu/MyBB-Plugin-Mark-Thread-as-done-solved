@@ -169,11 +169,6 @@ function threadsolved_uninstall()
 
 function threadsolved_activate()
 {
-    global $db, $mybb, $lang;
-
-    // Sprachdatei laden
-    $lang->load("tsthreadsolved");
-
     require MYBB_ROOT . "/inc/adminfunctions_templates.php";
     find_replace_templatesets("forumdisplay_thread", '#{\$gotounread}#', "{\$gotounread} {\$threadsolved} ");
     find_replace_templatesets("search_results_threads_thread", '#{\$gotounread}#', "{\$gotounread} {\$threadsolved} ");
